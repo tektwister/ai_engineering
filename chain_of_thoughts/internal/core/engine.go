@@ -38,7 +38,7 @@ func (e *Engine) SetPromptStrategy(strategy domain.PromptStrategy) {
 	e.strategy = strategy
 }
 
-// Reason performs chain of thought reasoning on the given input.
+// Reason performs chain of thought reasoning on the given input using an explicit loop.
 func (e *Engine) Reason(ctx context.Context, req *domain.CoTRequest) (*domain.CoTResponse, error) {
 	if e.provider == nil {
 		return nil, fmt.Errorf("no provider configured")
@@ -47,65 +47,23 @@ func (e *Engine) Reason(ctx context.Context, req *domain.CoTRequest) (*domain.Co
 		return nil, fmt.Errorf("no prompt strategy configured")
 	}
 
-	// 1. Build the prompt using the strategy
-	messages := e.strategy.BuildPrompt(req.Messages)
-
-	// 2. Create the request for the provider
-	// Convert CoTRequest to llm.CompletionRequest
-	providerReq := &llm.CompletionRequest{
-		Messages:    messages,
-		Model:       req.Model,
-		MaxTokens:   req.MaxTokens,
-		Temperature: req.Temperature,
-		TopP:        req.TopP,
-		Options:     req.Options,
+	// 1. Initialize Chain
+	chain := domain.ChainOfThought{
+		Model:    req.Model,
+		Provider: e.provider.Name(),
+		Steps:    []domain.ThoughtStep{},
 	}
-
-	// 3. Call the provider
-	resp, err := e.provider.Complete(ctx, providerReq)
-	if err != nil {
-		return nil, err
-	}
-
-	// 4. Parse the response using the strategy
-	cot, err := e.strategy.ParseResponse(resp.Content)
 	
-	// Create CoTResponse
-	cotResponse := &domain.CoTResponse{
-		RawContent: resp.Content,
-	}
-
-	if err != nil {
-		// If parsing fails, we still return the raw content but with an error note
-		cotResponse.Chain = domain.ChainOfThought{
-			Model:       req.Model,
-			Provider:    e.provider.Name(),
-			FinalAnswer: resp.Content,
-		}
-		cotResponse.Error = fmt.Errorf("failed to parse CoT response: %w", err)
-		return cotResponse, nil // Return response with error field populated rather than erroring out completely?
-		// Original code returned parse error. Let's start with returning error unless fallback logic handles it.
-		// Original logic:
-		/*
-		resp.Chain = domain.ChainOfThought{...}
-		return resp, fmt.Errorf(...)
-		*/
-		// So we mimic that.
-	}
-
-	// Merge token usage stats
-	cot.TotalTokens = resp.Usage.TotalTokens
-	cot.PromptTokens = resp.Usage.PromptTokens
-	cot.ResponseTokens = resp.Usage.CompletionTokens
-	cot.Model = req.Model
-	cot.Provider = e.provider.Name()
-
-	// Copy the question from the first user message if available
+	// Copy initial history
+	history := make([]domain.Message, len(req.Messages))
+	copy(history, req.Messages)
+	
+	// Extract Question for metadata
 	for _, msg := range req.Messages {
 		if msg.Role == domain.RoleUser {
 			for _, c := range msg.Contents {
 				if c.Type == domain.ContentTypeText {
-					cot.Question = c.Text
+					chain.Question = c.Text
 					break
 				}
 			}
@@ -113,126 +71,117 @@ func (e *Engine) Reason(ctx context.Context, req *domain.CoTRequest) (*domain.Co
 		}
 	}
 
-	cotResponse.Chain = *cot
-	return cotResponse, nil
+	// 2. Initial Setup
+	messages := e.strategy.BuildInitialPrompt(history)
+	
+	const MaxSteps = 10
+	var finalAnswer string
+	
+	// 3. Reasoning Loop
+	for stepCount := 1; stepCount <= MaxSteps; stepCount++ {
+		// Construct prompt for NEXT step
+		stepPrompt := e.strategy.BuildNextStepPrompt(messages, chain)
+		
+		// Create request
+		providerReq := &llm.CompletionRequest{
+			Messages:    stepPrompt,
+			Model:       req.Model,
+			MaxTokens:   req.MaxTokens,
+			Temperature: req.Temperature,
+			TopP:        req.TopP,
+			Options:     req.Options,
+		}
+
+		// Call Provider
+		resp, err := e.provider.Complete(ctx, providerReq)
+		if err != nil {
+			return nil, fmt.Errorf("provider error at step %d: %w", stepCount, err)
+		}
+		
+		// Update Token Usage
+		chain.TotalTokens += resp.Usage.TotalTokens
+		chain.PromptTokens += resp.Usage.PromptTokens
+		chain.ResponseTokens += resp.Usage.CompletionTokens
+
+		// Parse Response
+		content, isFinal, err := e.strategy.ParseStep(resp.Content)
+		if err != nil {
+			return nil, fmt.Errorf("strategy parse error at step %d: %w", stepCount, err)
+		}
+		
+		// Append to history so model remembers what it just thought
+		messages = append(messages, domain.NewTextMessage(domain.RoleAssistant, resp.Content))
+		
+		if isFinal {
+			finalAnswer = content
+			chain.FinalAnswer = finalAnswer
+			break
+		} else {
+			// Add valid thought step to chain
+			chain.AddStep(fmt.Sprintf("Step %d", stepCount), content)
+		}
+	}
+
+	return &domain.CoTResponse{
+		Chain: chain,
+		RawContent: finalAnswer,
+	}, nil
 }
 
 // ReasonStream performs chain of thought reasoning with streaming output.
 func (e *Engine) ReasonStream(ctx context.Context, req *domain.CoTRequest) (<-chan domain.StreamChunk, error) {
-	if e.provider == nil {
-		return nil, fmt.Errorf("no provider configured")
-	}
-	if e.strategy == nil {
-		return nil, fmt.Errorf("no prompt strategy configured")
-	}
-
-	messages := e.strategy.BuildPrompt(req.Messages)
-
-	providerReq := &llm.CompletionRequest{
-		Messages:    messages,
-		Model:       req.Model,
-		MaxTokens:   req.MaxTokens,
-		Temperature: req.Temperature,
-		TopP:        req.TopP,
-		Options:     req.Options,
-	}
-
-	llmChunks, err := e.provider.CompleteStream(ctx, providerReq)
-	if err != nil {
-		return nil, err
-	}
-
-	cotChunks := make(chan domain.StreamChunk)
-
-	go func() {
-		defer close(cotChunks)
-		for chunk := range llmChunks {
-			cotChunks <- domain.StreamChunk{
-				Content:      chunk.Content,
-				IsFinal:      chunk.IsFinal,
-				FinishReason: chunk.FinishReason,
-				Error:        chunk.Error,
-				// IsThinking defaults to false, strategy would need to parse this if streaming
-			}
-		}
-	}()
-
-	return cotChunks, nil
+	// Simple implementation for now: Wait for full response then stream it? 
+	// Or implement complex streaming loop?
+	// For "Mimic Implementation", let's keep it simple and just run sync for now or error.
+	return nil, fmt.Errorf("streaming not yet implemented for explicit reasoning loop")
 }
 
-// --- Default Strategy ---
+// --- Explicit Step Strategy ---
 
-// ZeroShotCoTStrategy implements the "Let's think step by step" strategy.
-type ZeroShotCoTStrategy struct{}
+// ExplicitStepStrategy implements a programmatic loop strategy.
+type ExplicitStepStrategy struct{}
 
-func (s *ZeroShotCoTStrategy) Name() string {
-	return "zero_shot_cot"
+func (s *ExplicitStepStrategy) Name() string {
+	return "explicit_step_cot"
 }
 
-func (s *ZeroShotCoTStrategy) BuildPrompt(messages []domain.Message) []domain.Message {
-	// Deep copy messages to avoid side effects
-	newMessages := make([]domain.Message, len(messages))
-	copy(newMessages, messages)
-
-	// In a real Zero-Shot CoT, we might append "Let's think step by step" to the last user message
-	// or add it as a system prompt. Here we'll add a system prompt if one doesn't exist,
-	// or prepend to the existing one.
+func (s *ExplicitStepStrategy) BuildInitialPrompt(messages []domain.Message) []domain.Message {
+	// Start with system prompt defining the persona
+	systemMsg := "You are a precise reasoning agent. You solve problems by generating one logical step at a time. Do not jump to the conclusion."
 	
-	systemMsg := "You are a helpful AI assistant that solves problems by thinking step by step. " +
-		"When you answer, format your response as follows:\n\n" +
-		"### Reasoning\n" +
-		"1. [First step...]\n" +
-		"2. [Second step...]\n\n" +
-		"### Answer\n" +
-		"[Your final answer here]"
-
-	// Prepend system message
 	msgs := []domain.Message{
 		domain.NewTextMessage(domain.RoleSystem, systemMsg),
 	}
-	msgs = append(msgs, newMessages...)
+	msgs = append(msgs, messages...)
+	return msgs
+}
+
+func (s *ExplicitStepStrategy) BuildNextStepPrompt(history []domain.Message, chain domain.ChainOfThought) []domain.Message {
+	// Prompt the model to generate the next step specifically
+	var prompt string
+	if len(chain.Steps) == 0 {
+		prompt = "Please generate the first step of reasoning. Think about the problem structure."
+	} else {
+		prompt = fmt.Sprintf("You have completed %d steps. Please generate the next logical step. If you have enough information to answer, start your response with 'FINAL ANSWER:'.", len(chain.Steps))
+	}
+	
+	msgs := make([]domain.Message, len(history))
+	copy(msgs, history)
+	msgs = append(msgs, domain.NewTextMessage(domain.RoleUser, prompt))
 	
 	return msgs
 }
 
-func (s *ZeroShotCoTStrategy) ParseResponse(rawResponse string) (*domain.ChainOfThought, error) {
-	cot := &domain.ChainOfThought{
-		Steps: []domain.ThoughtStep{},
-	}
-
-	// Simple fuzzy parsing based on the requested format
-	parts := strings.Split(rawResponse, "### Answer")
-	if len(parts) < 2 {
-		// Fallback: entire response is the answer if we can't find the separator
-		cot.FinalAnswer = rawResponse
-		return cot, nil
-	}
-
-	reasoningPart := parts[0]
-	answerPart := parts[1]
-
-	// Extract steps from reasoning part
-	reasoningPart = strings.TrimPrefix(reasoningPart, "### Reasoning")
-	lines := strings.Split(reasoningPart, "\n")
+func (s *ExplicitStepStrategy) ParseStep(response string) (content string, isFinal bool, err error) {
+	// improved parsing logic
+	clean := strings.TrimSpace(response)
 	
-	stepNum := 1
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		
-		// Remove numbering like "1. " or "2."
-		cleanLine := line
-		if idx := strings.Index(line, "."); idx > 0 && idx < 5 { // simple check for numbering
-			cleanLine = strings.TrimSpace(line[idx+1:])
-		}
-
-		cot.AddStep(fmt.Sprintf("Step %d", stepNum), cleanLine)
-		stepNum++
+	if strings.HasPrefix(strings.ToUpper(clean), "FINAL ANSWER:") {
+		// Found the answer
+		answer := strings.TrimPrefix(clean, "FINAL ANSWER:")
+		answer = strings.TrimPrefix(answer, "Final Answer:")
+		return strings.TrimSpace(answer), true, nil
 	}
-
-	cot.FinalAnswer = strings.TrimSpace(answerPart)
-
-	return cot, nil
+	
+	return clean, false, nil
 }

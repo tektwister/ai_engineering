@@ -43,6 +43,45 @@ chain_of_thoughts/
 
 ## Architecture Overview
 
+### Design Pattern: Hexagonal Architecture
+
+The `chain_of_thoughts` module follows the **Hexagonal Architecture** pattern (also called Ports & Adapters), which isolates domain logic from external dependencies:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    External World                        │
+│  (OpenAI, Google, Groq, HuggingFace APIs)              │
+└─────────────────────────────────────────────────────────┘
+                           ↕
+                    ┌──────────────┐
+                    │   Adapters   │
+                    │  (Providers) │
+                    └──────────────┘
+                           ↕
+                    ┌──────────────┐
+                    │    Ports     │
+                    │(Interfaces)  │
+                    └──────────────┘
+                           ↕
+            ┌──────────────────────────────┐
+            │      Domain Layer            │
+            │   (Business Logic, Models)   │
+            └──────────────────────────────┘
+                           ↕
+            ┌──────────────────────────────┐
+            │    Application Layer         │
+            │  (Engine, Orchestration)     │
+            └──────────────────────────────┘
+```
+
+**Data Flow:**
+1. **User Input** → `cmd/main.go` creates a `CoTRequest` (domain model)
+2. **Engine** (`internal/core/Engine`) receives request + provider + strategy
+3. **Strategy** (`ZeroShotCoTStrategy`) builds a CoT prompt from the request
+4. **Adapter** (Provider) executes the prompt via the LLM API
+5. **Strategy** parses the raw response into structured `ChainOfThought` (reasoning steps + final answer)
+6. **Engine** returns `CoTResponse` to the caller
+
 ### Domain Layer (`internal/domain/`)
 
 **Models:**
@@ -127,6 +166,81 @@ for chunk := range respChan {
 	fmt.Print(chunk.Content)
 }
 ```
+
+## Sample Output
+
+Below is an example output from running the text-only logic puzzle example with the Groq provider:
+
+```
+=== Running Text-Only Logic Puzzle ===
+Question: If I have a 3 gallon jug and a 5 gallon jug, how can I measure exactly 4 gallons of water?
+
+Thinking...
+------------------------------------------------
+Model:  (groq)
+Duration: 3.1042517s
+Tokens: 5672 (Prompt: 4875, Response: 797)
+------------------------------------------------
+### Reasoning Steps:
+1. To solve this problem, let's break it down into steps. The first step is to determine the available operations.
+
+We have two jugs: a 3-gallon jug and a 5-gallon jug. The available operations are:
+
+1. Filling a jug from an external water source
+2. Emptying a jug
+3. Transferring water from one jug to another
+
+Let's consider the initial state of the jugs: empty.
+
+2. Next logical step: Fill the 5-gallon jug from the external water source.
+
+We now have a 5-gallon jug filled with water and an empty 3-gallon jug.
+
+3. Next logical step: Pour the water from the 5-gallon jug into the 3-gallon jug until the 3-gallon jug is full, leaving 2 gallons remaining in the 5-gallon jug (5 - 3 = 2).
+
+We now have a 3-gallon jug filled with water, a 5-gallon jug with 2 gallons of water, and an empty 5-gallon jug.
+
+4. Next logical step: Empty the 3-gallon jug, which is currently full. This will leave the 5-gallon jug with 2 gallons of water and the 3-gallon jug empty.
+
+We now have a 3-gallon jug empty, a 5-gallon jug with 2 gallons of water, and an empty 3-gallon jug.
+
+5. Next logical step: Fill the 3-gallon jug from the external water source.
+
+We now have a 3-gallon jug filled with water, a 5-gallon jug with 2 gallons of water, and an empty 5-gallon jug.
+
+Note: We've made progress, but we still need to find a way to measure exactly 4 gallons. Let's continue.
+
+6. Next logical step: Pour the 2 gallons from the 5-gallon jug into the 3-gallon jug, filling it completely. This will leave 0 gallons in the 5-gallon jug and 2 gallons in the 3-gallon jug.
+
+We now have a 3-gallon jug with 2 gallons of water, a 5-gallon jug empty, and an empty 5-gallon jug.
+
+7. Next logical step: Pour the 2 gallons from the 3-gallon jug into the 5-gallon jug. This will leave 0 gallons in the 3-gallon jug and 2 gallons in the 5-gallon jug.
+
+We now have a 3-gallon jug empty, a 5-gallon jug with 2 gallons of water, and an empty 3-gallon jug.
+
+8. Next logical step: Fill the 5-gallon jug from the external water source. This will add 3 gallons of water to the 5-gallon jug, bringing the total to 5 gallons.
+
+We now have a 5-gallon jug with 5 gallons of water, a 3-gallon jug empty, and the 3-gallon jug is also empty.
+
+Note: We're getting closer to measuring exactly 4 gallons.
+
+9. Next logical step: Empty the 5-gallon jug, which is currently full. This will leave the 5-gallon jug empty and bring the total amount of water in the 5-gallon jug back to 0 gallons.
+
+We now have a 5-gallon jug empty, a 3-gallon jug empty, and we still need to reach 4 gallons.
+
+10. Next logical step: Transfer the 2 gallons from the 3-gallon jug into the 5-gallon jug, then fill the 3-gallon jug from the external water source.
+
+We now have a 3-gallon jug being filled and a 5-gallon jug with 2 gallons of water.
+
+### Final Answer:
+Fill the 5-gallon jug, pour into the 3-gallon jug (leaving 2 gallons in the 5-gallon), empty the 3-gallon, transfer the 2 gallons to the 3-gallon, fill the 5-gallon again, pour from the 5-gallon into the 3-gallon until full (adding 1 gallon). Now the 5-gallon jug has exactly 4 gallons.
+```
+
+**Key Observations:**
+- The engine parsed **10 step-by-step reasoning blocks** from the LLM's response
+- Token usage: 4,875 prompt tokens + 797 response tokens = 5,672 total
+- Inference latency: **3.1 seconds** (provider-dependent; would vary with OpenAI, Google, etc.)
+- The LLM's chain-of-thought output is automatically extracted and structured into individual reasoning steps by the `ZeroShotCoTStrategy.ParseResponse()` method
 
 ## Adding a New Provider
 

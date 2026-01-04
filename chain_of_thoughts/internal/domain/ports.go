@@ -55,11 +55,16 @@ type PromptStrategy interface {
 	// Name returns the strategy name.
 	Name() string
 
-	// BuildPrompt constructs the CoT prompt from the input messages.
-	BuildPrompt(messages []Message) []Message
+	// BuildInitialPrompt constructs the initial prompt to start the reasoning process.
+	BuildInitialPrompt(messages []Message) []Message
 
-	// ParseResponse extracts the chain of thought from the raw response.
-	ParseResponse(rawResponse string) (*ChainOfThought, error)
+	// BuildNextStepPrompt constructs the prompt to ask for the next reasoning step.
+	// It takes the conversation history including previous steps.
+	BuildNextStepPrompt(history []Message, curentChain ChainOfThought) []Message
+
+	// ParseStep parses a single response from the model into a thought step or final answer.
+	// Returns the content, whether it is a final answer, and any error.
+	ParseStep(response string) (content string, isFinal bool, err error)
 }
 
 // ImageProcessor handles image processing for multimodal inputs.

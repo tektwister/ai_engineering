@@ -51,53 +51,64 @@ Implement the `llm.Provider` interface in `pkg/llm/providers/<yourprovider>/` an
 
 ## To Do
 
-- [ ] Agent loop (ReAct pattern)
-- [ ] Inference Server (in C++/Rust)
+### Phase 1: Fundamentals
+- [x] [Autograd engine (like Micrograd)](autograd_engine/README.md)
+- [ ] Tokenizer (BPE implementation)
 - [ ] Transformer from scratch (Attention is all you need)
-- [ ] Vector Database (HNSW index)
-- [ ] RAG pipeline
+- [ ] Matrix Multiplication kernel
+- [ ] Logit Processor
+- [ ] Small Language Model (SLM)
+
+### Phase 2: Model Optimization
 - [ ] Flash Attention kernel (CUDA)
 - [ ] Quantization library (Int8/FP4 implementation)
-- [ ] Mixture of Experts (MoE) routing layer
+- [ ] LoRA (Low-Rank Adaptation) trainer
+- [ ] Parameter Efficient Fine-Tuning (PEFT) library
+
+### Phase 3: Training at Scale
 - [ ] Distributed training loop (FSDP/Tensor Parallelism)
+- [ ] RLHF pipeline (PPO implementation)
+- [ ] DPO (Direct Preference Optimization) loss function
+- [ ] Model Distillation pipeline
+
+### Phase 4: Inference & Production
 - [ ] KV Cache paging system (like vLLM)
 - [ ] Speculative Decoding system
+- [ ] Inference Server (in C++/Rust)
+- [ ] Prompt caching mechanism
+
+### Phase 5: Advanced Architectures
+- [ ] Vision Transformer (ViT)
 - [ ] State Space Model (Mamba implementation)
-- [ ] RLHF pipeline (PPO implementation)
-- [ ] Small Language Model (SLM)
-- [ ] Matrix Multiplication kernel
-- [ ] LoRA (Low-Rank Adaptation) trainer
+- [ ] Mixture of Experts (MoE) routing layer
+- [ ] Multi-modal projector (CLIP implementation)
+- [ ] Diffusion model (UNet + Scheduler)
+
+### Phase 6: Applications & Systems
+- [ ] Agent loop (ReAct pattern)
+- [ ] RAG pipeline
+- [ ] Vector Database (HNSW index)
+- [ ] Function Calling router
+- [ ] Structured Output parser (Context Free Grammars)
+- [ ] LLM Eval harness
+- [ ] Guardrails system (Input/Output filtering)
 - [ ] Code interpreter sandbox
-- [ ] DPO (Direct Preference Optimization) loss function
 - [ ] Graph RAG system
 - [ ] Model merger (Model Soups/Spherical Linear Interpolation)
 - [ ] Interpretability tool (SAE - Sparse Autoencoders)
 - [ ] Synthetic data generator
-- [ ] Function Calling router
-- [ ] Structured Output parser (Context Free Grammars)
-- [ ] Multi-modal projector (CLIP implementation)
-- [ ] LLM Eval harness
-- [ ] Guardrails system (Input/Output filtering)
-- [ ] Prompt caching mechanism
-- [ ] Tokenizer (BPE implementation)
-- [ ] Autograd engine (like Micrograd)
-- [ ] Diffusion model (UNet + Scheduler)
-- [ ] Vision Transformer (ViT)
-- [ ] Whisper-style ASR model
-- [ ] Text-to-Speech pipeline
 - [ ] Semantic Router
 - [ ] Knowledge Graph builder
 - [ ] Data curation pipeline (MinHash/Deduplication)
 - [ ] AI Gateway (Load balancing/Failover)
-- [ ] Parameter Efficient Fine-Tuning (PEFT) library
 - [ ] Text-to-SQL engine
 - [ ] Recommendation system (Two-tower architecture)
 - [ ] Embedding model
-- [ ] Logit Processor
 - [ ] Softmax kernel optimization
 - [ ] Adversarial attack generator
 - [ ] Audio Spectrogram transformer
+- [ ] Whisper-style ASR model
+- [ ] Text-to-Speech pipeline
 - [ ] Neural Architecture Search
-- [ ] Model Distillation pipeline
 - [ ] Feature Store
 - [ ] Database driver (for Vectors)

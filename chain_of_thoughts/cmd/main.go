@@ -40,13 +40,24 @@ func main() {
 	}
 
 	// Initialize Engine
-	strategy := &core.ZeroShotCoTStrategy{}
+	strategy := &core.ExplicitStepStrategy{}
 	engine := core.NewEngine(provider, strategy)
 
 	ctx := context.Background()
 
-	// Text-only Logic Puzzle
+	// Example 1: Text-only Logic Puzzle
 	runTextExample(ctx, engine)
+
+	// Example 2: Multimodal Reasoning (if supported)
+	if provider.SupportsMultimodal() {
+		// Check for an example image
+		imagePath := "example_chart.png"
+		if _, err := os.Stat(imagePath); err == nil {
+			runMultimodalExample(ctx, engine, imagePath)
+		} else {
+			fmt.Println("\nSkipping multimodal example (example_chart.png not found)")
+		}
+	}
 }
 
 func runTextExample(ctx context.Context, engine *core.Engine) {
