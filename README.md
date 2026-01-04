@@ -24,7 +24,9 @@ cd ai_engineering
 2. **Configure environment variables**:
 Copy the env example file and add your API keys:
 
+```bash
 cp chain_of_thoughts/env.example .env
+```
 
 Edit `.env`:
 ```env
