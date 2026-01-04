@@ -6,20 +6,20 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/chain-of-thoughts/internal/domain"
 	"github.com/google/generative-ai-go/genai"
+	"github.com/tektwister/ai_engineering/pkg/llm"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
 
-// Provider implements the LLMProvider interface for Google Gemini.
+// Provider implements the Provider interface for Google Gemini.
 type Provider struct {
 	client *genai.Client
-	config *domain.ProviderConfig
+	config *llm.ProviderConfig
 }
 
 // New creates a new Google Gemini provider.
-func New(config *domain.ProviderConfig) (*Provider, error) {
+func New(config *llm.ProviderConfig) (*Provider, error) {
 	if config.APIKey == "" {
 		return nil, fmt.Errorf("Google API key is required")
 	}
@@ -42,7 +42,7 @@ func (p *Provider) Name() string {
 }
 
 // Complete sends a completion request and returns the response.
-func (p *Provider) Complete(ctx context.Context, req *domain.CoTRequest) (*domain.CoTResponse, error) {
+func (p *Provider) Complete(ctx context.Context, req *llm.CompletionRequest) (*llm.CompletionResponse, error) {
 	model := req.Model
 	if model == "" {
 		model = "gemini-2.0-flash"
@@ -96,20 +96,18 @@ func (p *Provider) Complete(ctx context.Context, req *domain.CoTRequest) (*domai
 		responseTokens = int(resp.UsageMetadata.CandidatesTokenCount)
 	}
 
-	return &domain.CoTResponse{
-		RawContent: content.String(),
-		Chain: domain.ChainOfThought{
-			Model:          model,
-			Provider:       p.Name(),
-			PromptTokens:   promptTokens,
-			ResponseTokens: responseTokens,
-			TotalTokens:    promptTokens + responseTokens,
+	return &llm.CompletionResponse{
+		Content: content.String(),
+		Usage: llm.Usage{
+			TotalTokens:      promptTokens + responseTokens,
+			PromptTokens:     promptTokens,
+			CompletionTokens: responseTokens,
 		},
 	}, nil
 }
 
 // CompleteStream sends a completion request and streams the response.
-func (p *Provider) CompleteStream(ctx context.Context, req *domain.CoTRequest) (<-chan domain.StreamChunk, error) {
+func (p *Provider) CompleteStream(ctx context.Context, req *llm.CompletionRequest) (<-chan llm.GenerationChunk, error) {
 	model := req.Model
 	if model == "" {
 		model = "gemini-2.0-flash"
@@ -141,7 +139,7 @@ func (p *Provider) CompleteStream(ctx context.Context, req *domain.CoTRequest) (
 
 	iter := genModel.GenerateContentStream(ctx, parts...)
 
-	chunks := make(chan domain.StreamChunk)
+	chunks := make(chan llm.GenerationChunk)
 
 	go func() {
 		defer close(chunks)
@@ -149,21 +147,21 @@ func (p *Provider) CompleteStream(ctx context.Context, req *domain.CoTRequest) (
 		for {
 			resp, err := iter.Next()
 			if err == iterator.Done {
-				chunks <- domain.StreamChunk{
+				chunks <- llm.GenerationChunk{
 					IsFinal:      true,
 					FinishReason: "stop",
 				}
 				return
 			}
 			if err != nil {
-				chunks <- domain.StreamChunk{Error: err}
+				chunks <- llm.GenerationChunk{Error: err}
 				return
 			}
 
 			if len(resp.Candidates) > 0 && resp.Candidates[0].Content != nil {
 				for _, part := range resp.Candidates[0].Content.Parts {
 					if text, ok := part.(genai.Text); ok {
-						chunks <- domain.StreamChunk{
+						chunks <- llm.GenerationChunk{
 							Content: string(text),
 						}
 					}
@@ -176,10 +174,10 @@ func (p *Provider) CompleteStream(ctx context.Context, req *domain.CoTRequest) (
 }
 
 // ListModels returns the available models for this provider.
-func (p *Provider) ListModels(ctx context.Context) ([]domain.ModelInfo, error) {
+func (p *Provider) ListModels(ctx context.Context) ([]llm.ModelInfo, error) {
 	iter := p.client.ListModels(ctx)
 
-	var models []domain.ModelInfo
+	var models []llm.ModelInfo
 	for {
 		m, err := iter.Next()
 		if err == iterator.Done {
@@ -191,11 +189,11 @@ func (p *Provider) ListModels(ctx context.Context) ([]domain.ModelInfo, error) {
 
 		// Only include Gemini models
 		if strings.Contains(m.Name, "gemini") {
-			models = append(models, domain.ModelInfo{
+			models = append(models, llm.ModelInfo{
 				ID:       m.Name,
 				Name:     m.DisplayName,
 				Provider: p.Name(),
-				Capabilities: domain.ModelCapabilities{
+				Capabilities: llm.ModelCapabilities{
 					SupportsVision:    true, // All Gemini models support vision
 					SupportsStreaming: true,
 					MaxOutputTokens:   int(m.OutputTokenLimit),
@@ -209,21 +207,21 @@ func (p *Provider) ListModels(ctx context.Context) ([]domain.ModelInfo, error) {
 }
 
 // GetModelInfo returns information about a specific model.
-func (p *Provider) GetModelInfo(ctx context.Context, modelID string) (*domain.ModelInfo, error) {
+func (p *Provider) GetModelInfo(ctx context.Context, modelID string) (*llm.ModelInfo, error) {
 	m, err := p.client.GenerativeModel(modelID).Info(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get model info: %w", err)
 	}
 
-	return &domain.ModelInfo{
+	return &llm.ModelInfo{
 		ID:       m.Name,
 		Name:     m.DisplayName,
 		Provider: p.Name(),
-		Capabilities: domain.ModelCapabilities{
-			SupportsVision:   true,
+		Capabilities: llm.ModelCapabilities{
+			SupportsVision:    true,
 			SupportsStreaming: true,
-			MaxOutputTokens:  int(m.OutputTokenLimit),
-			MaxContextTokens: int(m.InputTokenLimit),
+			MaxOutputTokens:   int(m.OutputTokenLimit),
+			MaxContextTokens:  int(m.InputTokenLimit),
 		},
 	}, nil
 }
@@ -240,15 +238,15 @@ func (p *Provider) Close() error {
 
 // convertMessages converts domain messages to Gemini parts.
 // Returns the parts and any system instruction extracted.
-func (p *Provider) convertMessages(messages []domain.Message) ([]genai.Part, string) {
+func (p *Provider) convertMessages(messages []llm.Message) ([]genai.Part, string) {
 	var systemInstruction string
 	var parts []genai.Part
 
 	for _, msg := range messages {
 		// Extract system message
-		if msg.Role == domain.RoleSystem {
+		if msg.Role == llm.RoleSystem {
 			for _, content := range msg.Contents {
-				if content.Type == domain.ContentTypeText {
+				if content.Type == llm.ContentTypeText {
 					systemInstruction = content.Text
 					break
 				}
@@ -259,17 +257,17 @@ func (p *Provider) convertMessages(messages []domain.Message) ([]genai.Part, str
 		// Add role prefix for conversation context
 		var rolePrefix string
 		switch msg.Role {
-		case domain.RoleUser:
+		case llm.RoleUser:
 			rolePrefix = "User: "
-		case domain.RoleAssistant:
+		case llm.RoleAssistant:
 			rolePrefix = "Assistant: "
 		}
 
 		for _, content := range msg.Contents {
 			switch content.Type {
-			case domain.ContentTypeText:
+			case llm.ContentTypeText:
 				parts = append(parts, genai.Text(rolePrefix+content.Text))
-			case domain.ContentTypeImage:
+			case llm.ContentTypeImage:
 				if content.ImageBase64 != "" {
 					mimeType := content.MimeType
 					if mimeType == "" {

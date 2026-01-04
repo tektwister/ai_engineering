@@ -7,18 +7,18 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/chain-of-thoughts/internal/domain"
 	openai "github.com/sashabaranov/go-openai"
+	"github.com/tektwister/ai_engineering/pkg/llm"
 )
 
-// Provider implements the LLMProvider interface for OpenAI.
+// Provider implements the Provider interface for OpenAI.
 type Provider struct {
 	client *openai.Client
-	config *domain.ProviderConfig
+	config *llm.ProviderConfig
 }
 
 // New creates a new OpenAI provider.
-func New(config *domain.ProviderConfig) (*Provider, error) {
+func New(config *llm.ProviderConfig) (*Provider, error) {
 	if config.APIKey == "" {
 		return nil, fmt.Errorf("OpenAI API key is required")
 	}
@@ -45,7 +45,7 @@ func (p *Provider) Name() string {
 }
 
 // Complete sends a completion request and returns the response.
-func (p *Provider) Complete(ctx context.Context, req *domain.CoTRequest) (*domain.CoTResponse, error) {
+func (p *Provider) Complete(ctx context.Context, req *llm.CompletionRequest) (*llm.CompletionResponse, error) {
 	messages := p.convertMessages(req.Messages)
 
 	model := req.Model
@@ -85,20 +85,18 @@ func (p *Provider) Complete(ctx context.Context, req *domain.CoTRequest) (*domai
 
 	content := resp.Choices[0].Message.Content
 
-	return &domain.CoTResponse{
-		RawContent: content,
-		Chain: domain.ChainOfThought{
-			Model:          model,
-			Provider:       p.Name(),
-			TotalTokens:    resp.Usage.TotalTokens,
-			PromptTokens:   resp.Usage.PromptTokens,
-			ResponseTokens: resp.Usage.CompletionTokens,
+	return &llm.CompletionResponse{
+		Content: content,
+		Usage: llm.Usage{
+			TotalTokens:      resp.Usage.TotalTokens,
+			PromptTokens:     resp.Usage.PromptTokens,
+			CompletionTokens: resp.Usage.CompletionTokens,
 		},
 	}, nil
 }
 
 // CompleteStream sends a completion request and streams the response.
-func (p *Provider) CompleteStream(ctx context.Context, req *domain.CoTRequest) (<-chan domain.StreamChunk, error) {
+func (p *Provider) CompleteStream(ctx context.Context, req *llm.CompletionRequest) (<-chan llm.GenerationChunk, error) {
 	messages := p.convertMessages(req.Messages)
 
 	model := req.Model
@@ -129,7 +127,7 @@ func (p *Provider) CompleteStream(ctx context.Context, req *domain.CoTRequest) (
 		return nil, fmt.Errorf("OpenAI stream failed: %w", err)
 	}
 
-	chunks := make(chan domain.StreamChunk)
+	chunks := make(chan llm.GenerationChunk)
 
 	go func() {
 		defer close(chunks)
@@ -139,14 +137,14 @@ func (p *Provider) CompleteStream(ctx context.Context, req *domain.CoTRequest) (
 			response, err := stream.Recv()
 			if err != nil {
 				if err.Error() != "EOF" {
-					chunks <- domain.StreamChunk{Error: err}
+					chunks <- llm.GenerationChunk{Error: err}
 				}
 				return
 			}
 
 			if len(response.Choices) > 0 {
 				choice := response.Choices[0]
-				chunks <- domain.StreamChunk{
+				chunks <- llm.GenerationChunk{
 					Content:      choice.Delta.Content,
 					FinishReason: string(choice.FinishReason),
 					IsFinal:      choice.FinishReason != "",
@@ -159,21 +157,21 @@ func (p *Provider) CompleteStream(ctx context.Context, req *domain.CoTRequest) (
 }
 
 // ListModels returns the available models for this provider.
-func (p *Provider) ListModels(ctx context.Context) ([]domain.ModelInfo, error) {
+func (p *Provider) ListModels(ctx context.Context) ([]llm.ModelInfo, error) {
 	resp, err := p.client.ListModels(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list models: %w", err)
 	}
 
-	models := make([]domain.ModelInfo, 0, len(resp.Models))
+	models := make([]llm.ModelInfo, 0, len(resp.Models))
 	for _, m := range resp.Models {
 		// Filter to only include chat models
 		if strings.Contains(m.ID, "gpt") || strings.Contains(m.ID, "o1") {
-			models = append(models, domain.ModelInfo{
+			models = append(models, llm.ModelInfo{
 				ID:       m.ID,
 				Name:     m.ID,
 				Provider: p.Name(),
-				Capabilities: domain.ModelCapabilities{
+				Capabilities: llm.ModelCapabilities{
 					SupportsVision:    strings.Contains(m.ID, "gpt-4") || strings.Contains(m.ID, "o1"),
 					SupportsStreaming: true,
 					SupportsFunctions: true,
@@ -186,7 +184,7 @@ func (p *Provider) ListModels(ctx context.Context) ([]domain.ModelInfo, error) {
 }
 
 // GetModelInfo returns information about a specific model.
-func (p *Provider) GetModelInfo(ctx context.Context, modelID string) (*domain.ModelInfo, error) {
+func (p *Provider) GetModelInfo(ctx context.Context, modelID string) (*llm.ModelInfo, error) {
 	// OpenAI doesn't have a direct model info endpoint, so we use predefined info
 	info := getModelInfo(modelID)
 	if info == nil {
@@ -206,7 +204,7 @@ func (p *Provider) Close() error {
 }
 
 // convertMessages converts domain messages to OpenAI messages.
-func (p *Provider) convertMessages(messages []domain.Message) []openai.ChatCompletionMessage {
+func (p *Provider) convertMessages(messages []llm.Message) []openai.ChatCompletionMessage {
 	result := make([]openai.ChatCompletionMessage, 0, len(messages))
 
 	for _, msg := range messages {
@@ -214,12 +212,12 @@ func (p *Provider) convertMessages(messages []domain.Message) []openai.ChatCompl
 
 		for _, content := range msg.Contents {
 			switch content.Type {
-			case domain.ContentTypeText:
+			case llm.ContentTypeText:
 				parts = append(parts, openai.ChatMessagePart{
 					Type: openai.ChatMessagePartTypeText,
 					Text: content.Text,
 				})
-			case domain.ContentTypeImage:
+			case llm.ContentTypeImage:
 				imageURL := content.ImageURL
 				if content.ImageBase64 != "" {
 					mimeType := content.MimeType
@@ -256,13 +254,13 @@ func (p *Provider) convertMessages(messages []domain.Message) []openai.ChatCompl
 }
 
 // getModelInfo returns predefined model information.
-func getModelInfo(modelID string) *domain.ModelInfo {
-	models := map[string]*domain.ModelInfo{
+func getModelInfo(modelID string) *llm.ModelInfo {
+	models := map[string]*llm.ModelInfo{
 		"gpt-4o": {
 			ID:       "gpt-4o",
 			Name:     "GPT-4o",
 			Provider: "openai",
-			Capabilities: domain.ModelCapabilities{
+			Capabilities: llm.ModelCapabilities{
 				SupportsVision:    true,
 				SupportsAudio:     true,
 				SupportsStreaming: true,
@@ -275,7 +273,7 @@ func getModelInfo(modelID string) *domain.ModelInfo {
 			ID:       "gpt-4o-mini",
 			Name:     "GPT-4o Mini",
 			Provider: "openai",
-			Capabilities: domain.ModelCapabilities{
+			Capabilities: llm.ModelCapabilities{
 				SupportsVision:    true,
 				SupportsStreaming: true,
 				SupportsFunctions: true,
@@ -287,7 +285,7 @@ func getModelInfo(modelID string) *domain.ModelInfo {
 			ID:       "gpt-4-turbo",
 			Name:     "GPT-4 Turbo",
 			Provider: "openai",
-			Capabilities: domain.ModelCapabilities{
+			Capabilities: llm.ModelCapabilities{
 				SupportsVision:    true,
 				SupportsStreaming: true,
 				SupportsFunctions: true,
@@ -299,7 +297,7 @@ func getModelInfo(modelID string) *domain.ModelInfo {
 			ID:       "o1-preview",
 			Name:     "O1 Preview",
 			Provider: "openai",
-			Capabilities: domain.ModelCapabilities{
+			Capabilities: llm.ModelCapabilities{
 				SupportsVision:    true,
 				SupportsStreaming: false,
 				SupportsFunctions: false,
@@ -311,7 +309,7 @@ func getModelInfo(modelID string) *domain.ModelInfo {
 			ID:       "o1-mini",
 			Name:     "O1 Mini",
 			Provider: "openai",
-			Capabilities: domain.ModelCapabilities{
+			Capabilities: llm.ModelCapabilities{
 				SupportsVision:    true,
 				SupportsStreaming: false,
 				SupportsFunctions: false,
@@ -325,23 +323,19 @@ func getModelInfo(modelID string) *domain.ModelInfo {
 		return info
 	}
 
-	// Return a generic GPT-4 info for unknown models
-	if strings.HasPrefix(modelID, "gpt-4") {
-		return &domain.ModelInfo{
-			ID:       modelID,
-			Name:     modelID,
-			Provider: "openai",
-			Capabilities: domain.ModelCapabilities{
-				SupportsVision:    true,
-				SupportsStreaming: true,
-				SupportsFunctions: true,
-				MaxContextTokens:  128000,
-				MaxOutputTokens:   4096,
-			},
-		}
+	// Return a generic info for unknown models to support Ollama/LocalAI/others
+	return &llm.ModelInfo{
+		ID:       modelID,
+		Name:     modelID,
+		Provider: "openai",
+		Capabilities: llm.ModelCapabilities{
+			SupportsVision:    true,  // Assume support
+			SupportsStreaming: true,  // Most modern models support this
+			SupportsFunctions: false, // Conservative default
+			MaxContextTokens:  32768, // Reasonable default for modern models
+			MaxOutputTokens:   4096,
+		},
 	}
-
-	return nil
 }
 
 // Helper function for base64 encoding (exposed for testing)

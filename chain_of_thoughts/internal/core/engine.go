@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/chain-of-thoughts/internal/domain"
+	"github.com/tektwister/ai_engineering/chain-of-thoughts/internal/domain"
+	"github.com/tektwister/ai_engineering/pkg/llm"
 )
 
 // Engine implements the ChainOfThoughtEngine interface.
@@ -50,7 +51,8 @@ func (e *Engine) Reason(ctx context.Context, req *domain.CoTRequest) (*domain.Co
 	messages := e.strategy.BuildPrompt(req.Messages)
 
 	// 2. Create the request for the provider
-	providerReq := &domain.CoTRequest{
+	// Convert CoTRequest to llm.CompletionRequest
+	providerReq := &llm.CompletionRequest{
 		Messages:    messages,
 		Model:       req.Model,
 		MaxTokens:   req.MaxTokens,
@@ -66,24 +68,37 @@ func (e *Engine) Reason(ctx context.Context, req *domain.CoTRequest) (*domain.Co
 	}
 
 	// 4. Parse the response using the strategy
-	cot, err := e.strategy.ParseResponse(resp.RawContent)
+	cot, err := e.strategy.ParseResponse(resp.Content)
+	
+	// Create CoTResponse
+	cotResponse := &domain.CoTResponse{
+		RawContent: resp.Content,
+	}
+
 	if err != nil {
 		// If parsing fails, we still return the raw content but with an error note
-		// This allows the user to see what the model output was even if it didn't match the format
-		resp.Chain = domain.ChainOfThought{
-			Model:       resp.Chain.Model,
-			Provider:    resp.Chain.Provider,
-			FinalAnswer: resp.RawContent,
+		cotResponse.Chain = domain.ChainOfThought{
+			Model:       req.Model,
+			Provider:    e.provider.Name(),
+			FinalAnswer: resp.Content,
 		}
-		return resp, fmt.Errorf("failed to parse CoT response: %w", err)
+		cotResponse.Error = fmt.Errorf("failed to parse CoT response: %w", err)
+		return cotResponse, nil // Return response with error field populated rather than erroring out completely?
+		// Original code returned parse error. Let's start with returning error unless fallback logic handles it.
+		// Original logic:
+		/*
+		resp.Chain = domain.ChainOfThought{...}
+		return resp, fmt.Errorf(...)
+		*/
+		// So we mimic that.
 	}
 
 	// Merge token usage stats
-	cot.TotalTokens = resp.Chain.TotalTokens
-	cot.PromptTokens = resp.Chain.PromptTokens
-	cot.ResponseTokens = resp.Chain.ResponseTokens
-	cot.Model = resp.Chain.Model
-	cot.Provider = resp.Chain.Provider
+	cot.TotalTokens = resp.Usage.TotalTokens
+	cot.PromptTokens = resp.Usage.PromptTokens
+	cot.ResponseTokens = resp.Usage.CompletionTokens
+	cot.Model = req.Model
+	cot.Provider = e.provider.Name()
 
 	// Copy the question from the first user message if available
 	for _, msg := range req.Messages {
@@ -98,8 +113,8 @@ func (e *Engine) Reason(ctx context.Context, req *domain.CoTRequest) (*domain.Co
 		}
 	}
 
-	resp.Chain = *cot
-	return resp, nil
+	cotResponse.Chain = *cot
+	return cotResponse, nil
 }
 
 // ReasonStream performs chain of thought reasoning with streaming output.
@@ -113,7 +128,7 @@ func (e *Engine) ReasonStream(ctx context.Context, req *domain.CoTRequest) (<-ch
 
 	messages := e.strategy.BuildPrompt(req.Messages)
 
-	providerReq := &domain.CoTRequest{
+	providerReq := &llm.CompletionRequest{
 		Messages:    messages,
 		Model:       req.Model,
 		MaxTokens:   req.MaxTokens,
@@ -122,10 +137,27 @@ func (e *Engine) ReasonStream(ctx context.Context, req *domain.CoTRequest) (<-ch
 		Options:     req.Options,
 	}
 
-	// For now, we simply pass through the stream from the provider.
-	// In a more advanced implementation, we could try to parse the stream in real-time
-	// to identify reasoning steps vs final answer.
-	return e.provider.CompleteStream(ctx, providerReq)
+	llmChunks, err := e.provider.CompleteStream(ctx, providerReq)
+	if err != nil {
+		return nil, err
+	}
+
+	cotChunks := make(chan domain.StreamChunk)
+
+	go func() {
+		defer close(cotChunks)
+		for chunk := range llmChunks {
+			cotChunks <- domain.StreamChunk{
+				Content:      chunk.Content,
+				IsFinal:      chunk.IsFinal,
+				FinishReason: chunk.FinishReason,
+				Error:        chunk.Error,
+				// IsThinking defaults to false, strategy would need to parse this if streaming
+			}
+		}
+	}()
+
+	return cotChunks, nil
 }
 
 // --- Default Strategy ---

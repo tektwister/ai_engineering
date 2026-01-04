@@ -4,33 +4,26 @@ package domain
 import (
 	"context"
 	"io"
+
+	"github.com/tektwister/ai_engineering/pkg/llm"
 )
 
 // LLMProvider defines the interface that all LLM providers must implement.
-type LLMProvider interface {
-	// Name returns the provider's name (e.g., "openai", "anthropic", "google").
-	Name() string
+// We alias it to the shared generic provider interface.
+type LLMProvider = llm.Provider
 
-	// Complete sends a completion request and returns the response.
-	Complete(ctx context.Context, req *CoTRequest) (*CoTResponse, error)
+// StreamChunk represents a chunk of response (aliased from generic).
+// But wait, StreamChunk in domain had specific CoT fields like IsThinking.
+// llm.GenerationChunk is generic.
+// Should we extend it or keep StreamChunk separate?
+// Original StreamChunk: Content, IsThinking, IsFinal, FinishReason, Error.
+// llm.GenerationChunk: Content, IsFinal, FinishReason, Error.
+// Missing IsThinking.
+// If CoT engine needs IsThinking, it parses it from content or provider specific field?
+// Providers like default don't have thinking.
+// Let's redefine StreamChunk in domain as it might be specific to CoT usage (e.g. if we parse <thought> tags).
 
-	// CompleteStream sends a completion request and streams the response.
-	CompleteStream(ctx context.Context, req *CoTRequest) (<-chan StreamChunk, error)
-
-	// ListModels returns the available models for this provider.
-	ListModels(ctx context.Context) ([]ModelInfo, error)
-
-	// GetModelInfo returns information about a specific model.
-	GetModelInfo(ctx context.Context, modelID string) (*ModelInfo, error)
-
-	// SupportsMultimodal returns true if the provider supports multimodal inputs.
-	SupportsMultimodal() bool
-
-	// Close releases any resources held by the provider.
-	Close() error
-}
-
-// StreamChunk represents a chunk of streamed response.
+// StreamChunk represents a chunk of streamed response in CoT context.
 type StreamChunk struct {
 	Content      string `json:"content"`
 	IsThinking   bool   `json:"is_thinking"`   // True if this is reasoning content
@@ -98,17 +91,8 @@ type Logger interface {
 	Error(msg string, args ...any)
 }
 
-// ProviderFactory creates LLM providers.
-type ProviderFactory interface {
-	// Create creates a new provider instance.
-	Create(name string, config *ProviderConfig) (LLMProvider, error)
+// ProviderFactory creates LLM providers. (Aliased)
+type ProviderFactory = llm.ProviderFactory
 
-	// ListAvailable returns the names of available providers.
-	ListAvailable() []string
-
-	// Register registers a new provider constructor.
-	Register(name string, constructor ProviderConstructor)
-}
-
-// ProviderConstructor is a function that creates an LLM provider.
-type ProviderConstructor func(config *ProviderConfig) (LLMProvider, error)
+// ProviderConstructor is a function that creates an LLM provider. (Aliased)
+type ProviderConstructor = llm.ProviderConstructor

@@ -5,43 +5,50 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/chain-of-thoughts/internal/adapters/providers/anthropic"
-	"github.com/chain-of-thoughts/internal/adapters/providers/google"
-	"github.com/chain-of-thoughts/internal/adapters/providers/openai"
-	"github.com/chain-of-thoughts/internal/domain"
+	"github.com/tektwister/ai_engineering/pkg/llm"
+	"github.com/tektwister/ai_engineering/pkg/llm/providers/google"
+	"github.com/tektwister/ai_engineering/pkg/llm/providers/groq"
+	"github.com/tektwister/ai_engineering/pkg/llm/providers/huggingface"
+	"github.com/tektwister/ai_engineering/pkg/llm/providers/openai"
 )
 
 // Factory implements the ProviderFactory interface.
 type Factory struct {
 	mu           sync.RWMutex
-	constructors map[string]domain.ProviderConstructor
+	constructors map[string]llm.ProviderConstructor
 }
 
 // NewFactory creates a new provider factory with default providers registered.
 func NewFactory() *Factory {
 	f := &Factory{
-		constructors: make(map[string]domain.ProviderConstructor),
+		constructors: make(map[string]llm.ProviderConstructor),
 	}
 
 	// Register default providers
-	f.Register("openai", func(config *domain.ProviderConfig) (domain.LLMProvider, error) {
+	f.Register("openai", func(config *llm.ProviderConfig) (llm.Provider, error) {
 		return openai.New(config)
 	})
-	f.Register("anthropic", func(config *domain.ProviderConfig) (domain.LLMProvider, error) {
-		return anthropic.New(config)
+
+	f.Register("huggingface", func(config *llm.ProviderConfig) (llm.Provider, error) {
+		return huggingface.New(config)
 	})
-	f.Register("google", func(config *domain.ProviderConfig) (domain.LLMProvider, error) {
+
+	f.Register("google", func(config *llm.ProviderConfig) (llm.Provider, error) {
 		return google.New(config)
 	})
-	f.Register("gemini", func(config *domain.ProviderConfig) (domain.LLMProvider, error) {
+	f.Register("gemini", func(config *llm.ProviderConfig) (llm.Provider, error) {
 		return google.New(config) // Alias for google
+	})
+
+	f.Register("groq", func(config *llm.ProviderConfig) (llm.Provider, error) {
+		return groq.New(config)
 	})
 
 	return f
 }
 
 // Create creates a new provider instance.
-func (f *Factory) Create(name string, config *domain.ProviderConfig) (domain.LLMProvider, error) {
+func (f *Factory) Create(name string, config *llm.ProviderConfig) (llm.Provider, error) {
 	f.mu.RLock()
 	constructor, ok := f.constructors[name]
 	f.mu.RUnlock()
@@ -66,7 +73,7 @@ func (f *Factory) ListAvailable() []string {
 }
 
 // Register registers a new provider constructor.
-func (f *Factory) Register(name string, constructor domain.ProviderConstructor) {
+func (f *Factory) Register(name string, constructor llm.ProviderConstructor) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.constructors[name] = constructor
@@ -76,7 +83,7 @@ func (f *Factory) Register(name string, constructor domain.ProviderConstructor) 
 var DefaultFactory = NewFactory()
 
 // Create creates a provider using the default factory.
-func Create(name string, config *domain.ProviderConfig) (domain.LLMProvider, error) {
+func Create(name string, config *llm.ProviderConfig) (llm.Provider, error) {
 	return DefaultFactory.Create(name, config)
 }
 
@@ -86,6 +93,6 @@ func ListAvailable() []string {
 }
 
 // Register registers a provider with the default factory.
-func Register(name string, constructor domain.ProviderConstructor) {
+func Register(name string, constructor llm.ProviderConstructor) {
 	DefaultFactory.Register(name, constructor)
 }
