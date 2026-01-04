@@ -56,11 +56,9 @@ Implement the `llm.Provider` interface in `pkg/llm/providers/<yourprovider>/` an
 
 ### Applications & Systems
 - [x] [Reasoner (Chain of Thought implementation)](chain_of_thoughts/README.md)
+- [x] [Small Language Model (SLM)](small_language_model/README.md)
 
 ## To Do
-
-### Phase 1: Fundamentals
-- [ ] Small Language Model (SLM)
 
 ### Phase 2: Model Optimization
 - [ ] Flash Attention kernel (CUDA)
