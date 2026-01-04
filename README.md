@@ -49,6 +49,10 @@ Implement the `llm.Provider` interface in `pkg/llm/providers/<yourprovider>/` an
 
 ### Phase 1: Fundamentals
 - [x] [Autograd engine (like Micrograd)](autograd_engine/README.md)
+- [x] [Tokenizer (BPE implementation)](tokenizer/README.md)
+- [x] [Matrix Multiplication kernel](matrix_multiplication_kernel/README.md)
+- [x] [Transformer from scratch (Attention is all you need)](transformer/README.md)
+- [x] [Logit Processor](logit_processor/README.md)
 
 ### Applications & Systems
 - [x] [Reasoner (Chain of Thought implementation)](chain_of_thoughts/README.md)
@@ -56,10 +60,6 @@ Implement the `llm.Provider` interface in `pkg/llm/providers/<yourprovider>/` an
 ## To Do
 
 ### Phase 1: Fundamentals
-- [ ] Tokenizer (BPE implementation)
-- [ ] Transformer from scratch (Attention is all you need)
-- [ ] Matrix Multiplication kernel
-- [ ] Logit Processor
 - [ ] Small Language Model (SLM)
 
 ### Phase 2: Model Optimization

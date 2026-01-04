@@ -80,8 +80,6 @@ func (p *Provider) Complete(ctx context.Context, req *llm.CompletionRequest) (*l
 		chatReq.TopP = float32(req.TopP)
 	}
 
-	// Groq specific options? Currently compatible with OpenAI standard params.
-
 	resp, err := p.client.CreateChatCompletion(ctx, chatReq)
 	if err != nil {
 		return nil, fmt.Errorf("Groq completion failed: %w", err)
