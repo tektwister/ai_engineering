@@ -1,8 +1,53 @@
 # AI Engineering Roadmap using Golang
 
+A comprehensive collection of AI Engineering implementations in Go, demonstrating modern architectures and patterns. Each module is designed to be modular, well-tested, and production-ready.
+
+## Setup
+
+### Prerequisites
+
+- **Go 1.20+**: Download from [golang.org](https://golang.org/dl/)
+- **API Keys** (optional, for LLM providers):
+  - OpenAI: [platform.openai.com](https://platform.openai.com/)
+  - Google Gemini: [makersuite.google.com](https://makersuite.google.com/)
+  - Groq: [console.groq.com](https://console.groq.com/)
+  - HuggingFace: [huggingface.co](https://huggingface.co/)
+
+### Installation
+
+1. **Clone the repository**:
+```bash
+git clone https://github.com/tektwister/ai_engineering.git
+cd ai_engineering
+```
+
+2. **Configure environment variables**:
+Copy the env example file and add your API keys:
+
+cp chain_of_thoughts/env.example .env
+
+Edit `.env`:
+```env
+LLM_API_KEY=sk-...
+LLM_PROVIDER=openai # or google, groq, huggingface
+LLM_BASE_URL=      # (optional) custom base URL
+LLM_ORG_ID=        # (optional) organization ID
+```
+
+### Adding a New Provider
+
+Implement the `llm.Provider` interface in `pkg/llm/providers/<yourprovider>/` and register it in the factory.
+
+### Adding a New Module
+
+1. Create a new directory at the root level.
+2. Add a `go.mod` file.
+3. Implement domain layer, application layer, and adapters (following hexagonal architecture).
+4. Include a comprehensive `README.md` with usage examples.
+
 ## Completed
 
-- [x] Reasoner (Chain of Thought implementation)
+- [x] [Reasoner (Chain of Thought implementation)](chain_of_thoughts/README.md)
 
 ## To Do
 

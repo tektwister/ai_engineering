@@ -65,35 +65,6 @@ chain_of_thoughts/
   - `BuildPrompt()`: Injects a CoT instruction ("Think step by step...") into the messages.
   - `ParseResponse()`: Extracts reasoning steps and final answer from the LLM response (looks for patterns like "Step 1:", "Final Answer:", etc.).
 
-## Setup
-
-1. Clone the repository (if not already local).
-2. Install dependencies:
-```bash
-go mod tidy
-```
-3. Configure environment variables: copy `env.example` to `.env` and add your API key.
-
-Cross-platform copy examples:
-
-```bash
-# Unix / macOS
-cp env.example .env
-
-# Windows (PowerShell)
-Copy-Item env.example .env
-
-# Windows (cmd.exe)
-copy env.example .env
-```
-
-Edit `.env` and set values such as:
-
-```env
-LLM_API_KEY=sk-...
-LLM_PROVIDER=openai # or google, groq, huggingface
-```
-
 ## Usage
 
 ### Running the Example
@@ -191,14 +162,3 @@ Any provider implementing the `LLMProvider` interface can be used with the engin
    strategy := &MyCustomStrategy{}
    engine.SetPromptStrategy(strategy)
    ```
-
-## Environment Variables
-
-- `LLM_API_KEY`: API key for your LLM provider.
-- `LLM_PROVIDER`: Provider name (openai, google, groq, huggingface).
-- `LLM_BASE_URL`: (Optional) Custom base URL for the provider.
-- `LLM_ORG_ID`: (Optional) Organization ID (e.g., for OpenAI).
-
-## License
-
-See the root repository LICENSE file.
