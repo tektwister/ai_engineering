@@ -47,12 +47,15 @@ Implement the `llm.Provider` interface in `pkg/llm/providers/<yourprovider>/` an
 
 ## Completed
 
+### Phase 1: Fundamentals
+- [x] [Autograd engine (like Micrograd)](autograd_engine/README.md)
+
+### Applications & Systems
 - [x] [Reasoner (Chain of Thought implementation)](chain_of_thoughts/README.md)
 
 ## To Do
 
 ### Phase 1: Fundamentals
-- [x] [Autograd engine (like Micrograd)](autograd_engine/README.md)
 - [ ] Tokenizer (BPE implementation)
 - [ ] Transformer from scratch (Attention is all you need)
 - [ ] Matrix Multiplication kernel
