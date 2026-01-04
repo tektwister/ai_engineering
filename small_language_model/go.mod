@@ -8,7 +8,6 @@ require (
 )
 
 replace (
-	github.com/tektwister/ai_engineering/logit_processor => ../logit_processor
 	github.com/tektwister/ai_engineering/tokenizer => ../tokenizer
 	github.com/tektwister/ai_engineering/transformer => ../transformer
 )
