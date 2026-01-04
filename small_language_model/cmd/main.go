@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 
-	"github.com/tektwister/ai_engineering/logit_processor/internal/domain"
 	"github.com/tektwister/ai_engineering/small_language_model"
 )
 
@@ -119,7 +118,7 @@ func runGradientCheck() {
 	config := small_language_model.SmallGPTConfig()
 	modelConfig := &small_language_model.ModelConfig{
 		GPTConfig:   config,
-		SamplerType: domain.SamplingTopK,
+		SamplerType: small_language_model.SamplingTopK,
 		Temperature: 1.0,
 		TopK:        10,
 		TopP:        0.9,
@@ -158,7 +157,7 @@ func createModelConfig(size string) *small_language_model.ModelConfig {
 
 	return &small_language_model.ModelConfig{
 		GPTConfig:   gptConfig,
-		SamplerType: domain.SamplingTopP,
+		SamplerType: small_language_model.SamplingTopP,
 		Temperature: 1.0,
 		TopK:        50,
 		TopP:        0.9,
